@@ -1,135 +1,103 @@
-# Technicolor Modem MQTT Scraper
+# Technicolor TC4400 Modem Scraper
 
-This script is for monitoring signal quality on a Technicolor cable modem through MQTT. It allow you to scrape the modem status data and write it out to a MQTT broker. You can then use something like Home Assistant to take actions based on the data: graph it, issue automations to cycle a smartplug, etc.
+Publishes the signal status of a Technicolor TC4400 cable modem (downstream/upstream
+channels, power, SNR, corrected/uncorrectable errors, uptime, IPs) to MQTT with
+Home Assistant auto-discovery. A **TC4400** device with all sensors appears
+automatically under the MQTT integration — no YAML needed.
 
-You can run the script on any Unix/Linux computer that (a) can see both the modem and the MQTT broker and (b) has a working `mosquitto_pub`, or you can run it on a Home Assistant instance itself.
+## Credits
 
-## Files 
+This scraper was written by **[Philipp Reichmuth (phrxmd)](https://github.com/phrxmd)** —
+original repository: [phrxmd/Technicolor_modem_scrape](https://github.com/phrxmd/Technicolor_modem_scrape).
+It is in turn based on the Arris and Netgear modem scrapers by
+**[mmiller7](https://github.com/mmiller7)** ([Arris_modem_scrape](https://github.com/mmiller7/Arris_modem_scrape),
+[Netgear_modem_scrape](https://github.com/mmiller7/Netgear_modem_scrape)).
+The Home Assistant add-on packaging, installer and refactoring were contributed by
+[coaxx77](https://github.com/coaxx77).
 
-- `technicolor_signal_dump.sh` - the script which logs into the modem and scrapes/parses the data publishing JSON to MQTT 
-- `technicolor_modem_scrape.yaml` - YAML configuration examples for Home Assistant
+Licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), like the original.
 
-## What the script does
+Two install methods, pick one.
 
-The script does the following:
+---
 
-- Log into the modem's status pages using a username/password combination specified by the user
-- Scrape the modem's status pages for connection information
-- Publish the modem as a device, with manufacturer, hardware and software versions, serial number
-- Publish the modem state as a sensor ("Modem"), with channel and connectivity state, connected frequency, IPv4 and IPv6 addresses and modem uptime
-- For each downstream channel X, publish a sensor ("Down X") with the connection information for that channel (ID, frequency, width, SNR, received power level, modulation profile, lock and bonding status, error correction)
-- For each upstream channel Y, publish a sensor ("Up Y") with the connection information for that channel (ID, type, frequency, width, transmission power level, modulation profile, lock and bonding status)
-- Publish a sensor for the active connected channel ("Active"). If a connected channel is found, publish its state as "Active", as well as channel ID, frequency, SNR and power. If no connected channel is found, publish its state as "Inactive".
+## Option A — Home Assistant add-on (HA OS / Supervised) — recommended
 
-## MQTT Discovery and sensor entities 
+Requirements: the **Mosquitto broker** add-on (or any MQTT broker) and the MQTT integration.
 
-The script publishes sensor information via MQTT Discovery. Home Assistant will pick this up automatically and generate appropriate sensor entities. Other [third-party tools that support MQTT Discovery](https://www.home-assistant.io/integrations/mqtt#support-by-third-party-tools) should pick it up as well. 
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add
+   `https://github.com/phrxmd/Technicolor_modem_scrape`
+2. Install **Technicolor TC4400 Modem Scraper**.
+3. On the **Configuration** tab, enter your modem password if you changed it
+   from the default `bEn2o#US9s`.
+4. **Start** the add-on (and enable *Start on boot*).
 
-If your system does not support MQTT Discovery, you may need to set up appropriate sensor entities by hand, using the MQTT topics published by the script. By default, the MQTT topics are set up as follows, where `XXXX` is the serial number of your modem. 
+That's it. The MQTT broker and its credentials are detected automatically from the
+Mosquitto add-on. To use a different broker, fill in `mqtt_host` (and port/user/password).
 
-- `homeassistant/sensor/technicolor_scraper/login` - if the script was able to log into the modem, set to `success`, otherwise `failed` after two failed attempts.  
-- `homeassistant/sensor/cablemodemXXXX_status` - general status information for the modem 
-- `homeassistant/sensor/cablemodemXXXX_active` - connection quality for the active channel
-- `homeassistant/sensor/cablemodemXXXX_downstreamN` - link quality information for downstream channel `N`
-- `homeassistant/sensor/cablemodemXXXX_upstreamN` - link quality information for downstream channel `N`
+| Option | Default | Notes |
+|---|---|---|
+| `modem_url` | `http://192.168.100.1` | TC4400 only speaks plain HTTP |
+| `modem_username` / `modem_password` | `admin` / `bEn2o#US9s` | |
+| `scan_interval` | `300` | seconds (30–86400) |
+| `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password` | *(empty)* | leave empty to auto-use Mosquitto add-on |
+| `mqtt_topic_prefix` | `homeassistant/sensor` | discovery prefix |
+| `mqtt_uid_prefix` | `cablemodem` | |
+| `verbose` | `false` | log full scraper output each run |
 
-If you are not running Home Assistant, the prefixes `homeassistant/sensor` and `cablemodem` are configurable in the script.
+> The modem must be reachable from Home Assistant. If it sits behind a router/firewall
+> (e.g. pfSense), make sure HA can reach 192.168.100.1 (route/NAT on the WAN interface).
 
-### Multiple modems
+---
 
-If you have multiple Technicolor modems, the script should support scraping and publishing multiple modems separately. You need to set up a separate copy of the script for each modem. If you want to keep track of login attempts on each modem separately, you can set `mqtt_logging_topic` separately for each modem. This is untested.
+## Option B — any Linux host (systemd)
 
-## Installation process for Home Assistant
+Runs on any Debian/Ubuntu/Fedora machine, Proxmox LXC, Raspberry Pi, etc. that can
+reach both the modem and the MQTT broker:
 
-Here's how to get the script working in Home Assistant. If you're using something else than Home Assistant, you need to figure out how to get it working yourself (install the file, make sure it can use Mosquitto to publish things to MQTT, and set it up to run at regular intervals).
-
-The prerequisite on Home Assistant is to have [MQTT configured and working](https://www.home-assistant.io/integrations/mqtt/). I have tested this only with Home Assistant's own Mosquitto add-on.
-
-1. Download the script off GitHub and place it in `/config`, e.g. as `/config/technicolor_signal_dump.sh` or in a subfolder as you see fit.
-
-2. The script needs to be able to see Mosquitto binaries for posting MQTT data. Unfortunately the Home Assistant container seems not to give access to binaries in `/usr/bin`, so if you want to run this from within a Home Assistant container or supervised installation, you need to make the Mosquitto binary accessible. The easiest way to do this is to set up a copy under `/config` where our script can see it. This is a bit of a hack. Issue the following through the SSH terminal:
-```
-> mkdir /config/bin /config/bin/mosquitto_deps /config/bin/mosquitto_deps/lib
-> cp /usr/bin/mosquitto_pub /config/bin/mosquitto_deps
-> cp /usr/lib/libcares.so.2 /usr/lib/libmosquitto.so.1 /config/bin/mosquitto_deps/lib
-```
-In the script there is a section in the beginning that uses the `$mqtt_pub_exe` variable to point to the executable for your MQTT publisher. If you are not running this from a Home Assistant automation (e.g. if you can run it on another server running on your network) and have access to your system's binaries, you can comment out the lines that are there and uncomment the section that points the script to the `mosquitto_pub` binary directly. 
-
-3. Edit the `technicolor_signal_dump.sh` file and modify the lines at the top: 
-- The `modem_url' should be your modem's IP address, which is normally 192.168.100.1, accessed via plain HTTP (the TC4400 at least doesn't even support HTTPS).
-- If you changed the password for the modem's admin account from the default `bEn2o#US9s`, you need to modify it in the script.
-- If you are running your MQTT broker somewhere else than on the Home Assistant instance, point it to the right address.
-- The `mqtt_username` and `mqtt_password` should point to a valid username and password on the MQTT broker. If you use Home Assistant's built-in Mosquitto addon, you set these when installing the add-on.
-```
-modem_url="http://192.168.100.1"
-modem_username="admin"
-modem_password="bEn2o#US9s"
-
-# Settings for MQTT mqtt_broker to publish stats
-mqtt_broker="127.0.0.1"
-mqtt_username="your_mqtt_username_here"
-mqtt_password="your_mqtt_password_here"
+```bash
+curl -fsSL https://raw.githubusercontent.com/phrxmd/Technicolor_modem_scrape/main/install.sh | sudo bash
 ```
 
-Optional:
-At this point, if you wish, it should be possible to do an initial test. By opening a MQTT Explorer/Browser, and then going to the SSH addon in Home Assistant and running `/config/technicolor_signal_dump.sh`, it should scrape the modem and publish new topics.  You can see the command line output. In addition, one of the published topics should be `homeassistant/sensor/technicolor_scraper/login` which will provide information about problems or success of the modem login process while scraping the data.
+The installer installs `curl` + `mosquitto-clients`, asks for modem and MQTT
+settings (stored in `/etc/technicolor-modem-scrape.conf`, mode 600), and sets up a
+systemd timer (default every 5 minutes). Re-run it to change settings.
 
-5. Now, you will need to configure Home Assistant to connect to the sensors. For this, edit `configuration.yaml` and add a shell command that points to wherever under `/config` you saved the script. Take a look at `technicolor_modem_signal.yaml` for an example of what it could look like. If you installed the script is directly under `/config`, the minimally required entry in `configuration.yaml` would look like this:
-```
-# Technicolor TC4400 cable modem scraper script
-shell_command:
-  technicolor_signal_dump: '/config/technicolor_signal_dump.sh'
-```
-
-7. Set up an automation to adjust when the signal-scrape is triggered. I prefer to do this not in YAML, but in the Automation set-up in Home Assistant; that way I have all automations in one place. If you prefer to do this in YAML, take a look at `technicolor_modem_signal.yaml` for an example of what it could look like. Here is a very verbose automation example that shows you all the things you could do:
-```
-alias: Technicolor Cable Modem Signals
-description: Scrape the web interface of the TC4400 cable modem
-trigger:
-  - platform: homeassistant
-    event: start
-  - platform: time_pattern
-    minutes: "10"
-  - platform: state
-    entity_id:
-      - binary_sensor.ping_google_dns
-    to: "off"
-    for:
-      hours: 0
-      minutes: 0
-      seconds: 5
-condition: []
-action:
-  - service: shell_command.technicolor_signal_dump
-    response_variable: technicolor_response
-    data: {}
-  - if:
-      - condition: template
-        value_template: "{{ technicolor_response['returncode'] == 0 }}"
-    then:
-      - service: notify.notify
-        data:
-          title: Technicolor modem successfully scraped
-          message: "{{ technicolor_response['stdout'] }}"
-    else:
-      - service: notify.notify
-        data:
-          title: Error scraping Technicolor modem
-          message: "{{ technicolor_response['stderr'] }}"
-mode: single
+```bash
+journalctl -u technicolor-modem-scrape.service -n 50   # logs
+sudo bash install.sh --uninstall                      # remove
 ```
 
-This automation does the following:
-- Start the script whenever HomeAssistant starts;
-- Start the script every hour at the 10th minute;
-- Start the script whenever Google's DNS server `8.8.8.8` becomes unreachable for more than five seconds, as tested through a [ping sensor](https://www.home-assistant.io/integrations/ping/);
-- If the script succeeds, send a notification with its command line output to the first available notification provider;
-- If the script fails, send a notification with the error message to the first available notification provider.
+---
 
-8. Go to Home Assistant control panel, and validate your configuration.  If there are any errors, review those files before restarting Home Assistant.
+## Manual / advanced use
 
-9. Restart Home Assistant so it loads all the new changes.
+The script takes all settings from environment variables or from a config file
+given as the first argument — no editing required:
 
-10. You should have a new device appearing under the MQTT integration, and a bunch of new sensors under the new device. 
+```bash
+MODEM_PASSWORD='secret' MQTT_HOST=192.168.1.10 MQTT_USERNAME=mqtt MQTT_PASSWORD=pw \
+  ./technicolor_modem_scrape/rootfs/usr/bin/technicolor_signal_dump.sh
 
-This has been tested on my Technicolor TC4400, firmware 70.12.43-190628.
+DRY_RUN=1 ./technicolor_signal_dump.sh     # print MQTT messages instead of publishing
+```
+
+Variables: `MODEM_URL`, `MODEM_USERNAME`, `MODEM_PASSWORD`, `MQTT_HOST`, `MQTT_PORT`,
+`MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_TOPIC_PREFIX`, `MQTT_UID_PREFIX`,
+`MQTT_LOGGING_TOPIC`, `DRY_RUN`.
+
+## MQTT topics
+
+`XXXX` = modem serial number.
+
+- `homeassistant/sensor/technicolor_scraper/login` — `success` / `failed`
+- `homeassistant/sensor/cablemodemXXXX/status` — general modem status
+- `homeassistant/sensor/cablemodemXXXX/downstreamN` — downstream channel ID `N`
+- `homeassistant/sensor/cablemodemXXXX/upstreamN` — upstream channel `N`
+
+## Exit codes
+
+`10` mosquitto_pub missing · `20` MQTT publish error · `21` modem login/page failed ·
+`22` modem unreachable · `23` page could not be parsed
+
+Tested on TC4400 firmware 70.12.43-190628.
