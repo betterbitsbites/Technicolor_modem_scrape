@@ -15,7 +15,7 @@ It is in turn based on the Arris and Netgear modem scrapers by
 **[mmiller7](https://github.com/mmiller7)** ([Arris_modem_scrape](https://github.com/mmiller7/Arris_modem_scrape),
 [Netgear_modem_scrape](https://github.com/mmiller7/Netgear_modem_scrape)).
 The Home Assistant add-on packaging, installer and refactoring were contributed by
-[coaxx77](https://github.com/coaxx77).
+[betterbitsbites](https://github.com/betterbitsbites).
 
 Licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), like the original.
 
